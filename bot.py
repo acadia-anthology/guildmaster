@@ -128,6 +128,31 @@ class EmbedModal(discord.ui.Modal, title="Post an Embed"):
         await interaction.response.send_message(f"✅ Embed posted in {self._channel.mention}.", ephemeral=True)
 
 
+class EditModal(discord.ui.Modal, title="Edit Message"):
+    def __init__(self, message: discord.Message, is_embed: bool):
+        super().__init__()
+        self._message = message
+        self._is_embed = is_embed
+        current_text = message.embeds[0].description if is_embed else message.content
+        self.content = discord.ui.TextInput(
+            label="Message",
+            style=discord.TextStyle.paragraph,
+            default=current_text or "",
+            required=True,
+            max_length=4000 if is_embed else 2000,
+        )
+        self.add_item(self.content)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if self._is_embed:
+            embed = self._message.embeds[0]
+            embed.description = str(self.content)
+            await self._message.edit(embed=embed)
+        else:
+            await self._message.edit(content=str(self.content))
+        await interaction.response.send_message("✅ Message updated.", ephemeral=True)
+
+
 @client.event
 async def on_ready():
     for guild_id in SYNC_GUILD_IDS:
@@ -189,6 +214,31 @@ async def gm_post(interaction: discord.Interaction, channel: discord.TextChannel
 @app_commands.describe(channel="Channel to post in")
 async def gm_embed(interaction: discord.Interaction, channel: discord.TextChannel):
     await interaction.response.send_modal(EmbedModal(channel))
+
+
+@tree.command(name="gm-edit", description="Edit a message the bot previously posted.")
+@app_commands.describe(channel="Channel the message is in", message_id="The ID of the message to edit")
+async def gm_edit(interaction: discord.Interaction, channel: discord.TextChannel, message_id: str):
+    try:
+        msg_id = int(message_id)
+    except ValueError:
+        await interaction.response.send_message("❌ That doesn't look like a valid message ID.", ephemeral=True)
+        return
+
+    try:
+        message = await channel.fetch_message(msg_id)
+    except discord.NotFound:
+        await interaction.response.send_message("❌ Couldn't find that message in that channel.", ephemeral=True)
+        return
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to read that channel.", ephemeral=True)
+        return
+
+    if message.author.id != client.user.id:
+        await interaction.response.send_message("❌ I can only edit messages I posted myself.", ephemeral=True)
+        return
+
+    await interaction.response.send_modal(EditModal(message, is_embed=bool(message.embeds)))
 
 
 client.run(DISCORD_TOKEN)
