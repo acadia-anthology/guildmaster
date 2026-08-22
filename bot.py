@@ -31,7 +31,7 @@ intents.message_content = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
-GUILD_COLOR = 0x2b2d31
+GUILD_COLOR = 0x3ff34d
 
 WELCOME_FIELDS = [
     {
@@ -117,13 +117,23 @@ class EmbedModal(discord.ui.Modal, title="Post an Embed"):
         required=True,
         max_length=4000,
     )
+    color = discord.ui.TextInput(
+        label="Color (hex, optional)",
+        placeholder="3ff34d — leave blank for the default",
+        required=False,
+        max_length=6,
+    )
 
     def __init__(self, channel: discord.TextChannel):
         super().__init__()
         self._channel = channel
 
     async def on_submit(self, interaction: discord.Interaction):
-        embed = discord.Embed(description=str(self.content), color=GUILD_COLOR)
+        try:
+            embed_color = int(str(self.color).lstrip("#"), 16) if str(self.color) else GUILD_COLOR
+        except ValueError:
+            embed_color = GUILD_COLOR
+        embed = discord.Embed(description=str(self.content), color=embed_color)
         await self._channel.send(embed=embed)
         await interaction.response.send_message(f"✅ Embed posted in {self._channel.mention}.", ephemeral=True)
 
