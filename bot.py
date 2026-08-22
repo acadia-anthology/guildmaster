@@ -159,6 +159,9 @@ async def on_ready():
         guild = discord.Object(id=int(guild_id))
         tree.copy_global_to(guild=guild)
         await tree.sync(guild=guild)
+
+    if SYNC_GUILD_IDS:
+        tree.clear_commands(guild=None)
     await tree.sync()
     print(f"Guild Master is online as {client.user}")
 
