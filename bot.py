@@ -5,6 +5,7 @@ from discord import app_commands
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN", "")
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.json")
+TEST_GUILD_ID = os.environ.get("TEST_GUILD_ID", "")
 
 
 def load_config() -> dict:
@@ -129,6 +130,10 @@ class EmbedModal(discord.ui.Modal, title="Post an Embed"):
 
 @client.event
 async def on_ready():
+    if TEST_GUILD_ID:
+        guild = discord.Object(id=int(TEST_GUILD_ID))
+        tree.copy_global_to(guild=guild)
+        await tree.sync(guild=guild)
     await tree.sync()
     print(f"Guild Master is online as {client.user}")
 
