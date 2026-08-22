@@ -5,7 +5,7 @@ from discord import app_commands
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN", "")
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.json")
-TEST_GUILD_ID = os.environ.get("TEST_GUILD_ID", "")
+SYNC_GUILD_IDS = [g.strip() for g in os.environ.get("SYNC_GUILD_IDS", "").split(",") if g.strip()]
 
 
 def load_config() -> dict:
@@ -130,8 +130,8 @@ class EmbedModal(discord.ui.Modal, title="Post an Embed"):
 
 @client.event
 async def on_ready():
-    if TEST_GUILD_ID:
-        guild = discord.Object(id=int(TEST_GUILD_ID))
+    for guild_id in SYNC_GUILD_IDS:
+        guild = discord.Object(id=int(guild_id))
         tree.copy_global_to(guild=guild)
         await tree.sync(guild=guild)
     await tree.sync()
