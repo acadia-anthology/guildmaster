@@ -183,8 +183,12 @@ class EditModal(discord.ui.Modal, title="Edit Message"):
 @client.event
 async def on_ready():
     global EMOJI_MAP
-    app_emojis = await client.fetch_application_emojis()
-    EMOJI_MAP = {emoji.name: emoji for emoji in app_emojis}
+    try:
+        app_emojis = await client.fetch_application_emojis()
+        EMOJI_MAP = {emoji.name: emoji for emoji in app_emojis}
+        print(f"Loaded {len(EMOJI_MAP)} application emojis: {sorted(EMOJI_MAP)}")
+    except discord.HTTPException as exc:
+        print(f"Failed to fetch application emojis: {exc}")
 
     for guild_id in SYNC_GUILD_IDS:
         guild = discord.Object(id=int(guild_id))
