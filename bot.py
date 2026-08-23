@@ -37,10 +37,25 @@ tree = app_commands.CommandTree(client)
 GUILD_COLOR = 0x3ff34d
 
 EMOJI_MAP: dict[str, discord.Emoji] = {}
+EMOJI_TAG_PATTERN = re.compile(r"<a?:(\w+):\d+>")
 SHORTCODE_PATTERN = re.compile(r":(\w+):")
 
 
+def deresolve_emojis(text: str) -> str:
+    return EMOJI_TAG_PATTERN.sub(lambda m: f":{m.group(1)}:", text)
+
+
 def resolve_emojis(text: str) -> str:
+    # Protect already-resolved <:name:id> tags first, since they contain a
+    # :name: substring that would otherwise get matched and re-expanded.
+    protected = []
+
+    def stash(match: re.Match) -> str:
+        protected.append(match.group(0))
+        return f"\x00{len(protected) - 1}\x00"
+
+    text = EMOJI_TAG_PATTERN.sub(stash, text)
+
     def replace(match: re.Match) -> str:
         emoji = EMOJI_MAP.get(match.group(1))
         if not emoji:
@@ -48,7 +63,12 @@ def resolve_emojis(text: str) -> str:
         prefix = "a" if emoji.animated else ""
         return f"<{prefix}:{emoji.name}:{emoji.id}>"
 
-    return SHORTCODE_PATTERN.sub(replace, text)
+    text = SHORTCODE_PATTERN.sub(replace, text)
+
+    for i, tag in enumerate(protected):
+        text = text.replace(f"\x00{i}\x00", tag)
+
+    return text
 
 WELCOME_FIELDS = [
     {
@@ -162,11 +182,13 @@ class EditModal(discord.ui.Modal, title="Edit Message"):
         self._message = message
         self._is_embed = is_embed
         current_text = message.embeds[0].description if is_embed else message.content
+        current_text = deresolve_emojis(current_text or "")
         max_len = 4000 if is_embed else 2000
+        current_text = current_text[:max_len]
         self.content = discord.ui.TextInput(
-            label="Message",
+            label=f"Message ({len(current_text)}/{max_len})",
             style=discord.TextStyle.paragraph,
-            default=(current_text or "")[:max_len],
+            default=current_text,
             required=True,
             max_length=max_len,
         )
