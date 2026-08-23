@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import traceback
 import discord
 from discord import app_commands
 
@@ -187,22 +188,33 @@ async def on_ready():
         app_emojis = await client.fetch_application_emojis()
         EMOJI_MAP = {emoji.name: emoji for emoji in app_emojis}
         print(f"Loaded {len(EMOJI_MAP)} application emojis: {sorted(EMOJI_MAP)}")
-    except discord.HTTPException as exc:
-        print(f"Failed to fetch application emojis: {exc}")
+    except Exception:
+        print("Failed to fetch application emojis:")
+        traceback.print_exc()
 
-    for guild_id in SYNC_GUILD_IDS:
-        guild = discord.Object(id=int(guild_id))
-        tree.copy_global_to(guild=guild)
-        await tree.sync(guild=guild)
+    try:
+        for guild_id in SYNC_GUILD_IDS:
+            guild = discord.Object(id=int(guild_id))
+            tree.copy_global_to(guild=guild)
+            await tree.sync(guild=guild)
 
-    if SYNC_GUILD_IDS:
-        tree.clear_commands(guild=None)
-    await tree.sync()
-    print(f"Guild Master is online as {client.user}")
+        if SYNC_GUILD_IDS:
+            tree.clear_commands(guild=None)
+        await tree.sync()
+        print(f"Guild Master is online as {client.user}")
+    except Exception:
+        print("Failed during command sync:")
+        traceback.print_exc()
 
     commands_channel = client.get_channel(COMMANDS_CHANNEL_ID)
     if commands_channel:
-        await commands_channel.send("✅ The Guildmaster is back online.")
+        try:
+            await commands_channel.send("✅ The Guildmaster is back online.")
+        except Exception:
+            print("Failed to send online notice:")
+            traceback.print_exc()
+    else:
+        print(f"Could not find commands channel with ID {COMMANDS_CHANNEL_ID}")
 
 
 @client.event
