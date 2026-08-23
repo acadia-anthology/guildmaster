@@ -1,11 +1,13 @@
 import os
 import json
+import re
 import discord
 from discord import app_commands
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN", "")
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.json")
 SYNC_GUILD_IDS = [g.strip() for g in os.environ.get("SYNC_GUILD_IDS", "").split(",") if g.strip()]
+COMMANDS_CHANNEL_ID = 1513883581414375605
 
 
 def load_config() -> dict:
@@ -32,6 +34,20 @@ client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
 GUILD_COLOR = 0x3ff34d
+
+EMOJI_MAP: dict[str, discord.Emoji] = {}
+SHORTCODE_PATTERN = re.compile(r":(\w+):")
+
+
+def resolve_emojis(text: str) -> str:
+    def replace(match: re.Match) -> str:
+        emoji = EMOJI_MAP.get(match.group(1))
+        if not emoji:
+            return match.group(0)
+        prefix = "a" if emoji.animated else ""
+        return f"<{prefix}:{emoji.name}:{emoji.id}>"
+
+    return SHORTCODE_PATTERN.sub(replace, text)
 
 WELCOME_FIELDS = [
     {
@@ -105,7 +121,7 @@ class PostModal(discord.ui.Modal, title="Post a Message"):
         self._channel = channel
 
     async def on_submit(self, interaction: discord.Interaction):
-        await self._channel.send(str(self.message))
+        await self._channel.send(resolve_emojis(str(self.message)))
         await interaction.response.send_message(f"✅ Posted in {self._channel.mention}.", ephemeral=True)
 
 
@@ -124,17 +140,18 @@ class EmbedModal(discord.ui.Modal, title="Post an Embed"):
         max_length=6,
     )
 
-    def __init__(self, channel: discord.TextChannel):
+    def __init__(self, channel: discord.TextChannel, role: discord.Role = None):
         super().__init__()
         self._channel = channel
+        self._role = role
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
             embed_color = int(str(self.color).lstrip("#"), 16) if str(self.color) else GUILD_COLOR
         except ValueError:
             embed_color = GUILD_COLOR
-        embed = discord.Embed(description=str(self.content), color=embed_color)
-        await self._channel.send(embed=embed)
+        embed = discord.Embed(description=resolve_emojis(str(self.content)), color=embed_color)
+        await self._channel.send(content=self._role.mention if self._role else None, embed=embed)
         await interaction.response.send_message(f"✅ Embed posted in {self._channel.mention}.", ephemeral=True)
 
 
@@ -156,15 +173,19 @@ class EditModal(discord.ui.Modal, title="Edit Message"):
     async def on_submit(self, interaction: discord.Interaction):
         if self._is_embed:
             embed = self._message.embeds[0]
-            embed.description = str(self.content)
+            embed.description = resolve_emojis(str(self.content))
             await self._message.edit(embed=embed)
         else:
-            await self._message.edit(content=str(self.content))
+            await self._message.edit(content=resolve_emojis(str(self.content)))
         await interaction.response.send_message("✅ Message updated.", ephemeral=True)
 
 
 @client.event
 async def on_ready():
+    global EMOJI_MAP
+    app_emojis = await client.fetch_application_emojis()
+    EMOJI_MAP = {emoji.name: emoji for emoji in app_emojis}
+
     for guild_id in SYNC_GUILD_IDS:
         guild = discord.Object(id=int(guild_id))
         tree.copy_global_to(guild=guild)
@@ -174,6 +195,10 @@ async def on_ready():
         tree.clear_commands(guild=None)
     await tree.sync()
     print(f"Guild Master is online as {client.user}")
+
+    commands_channel = client.get_channel(COMMANDS_CHANNEL_ID)
+    if commands_channel:
+        await commands_channel.send("✅ The Guildmaster is back online.")
 
 
 @client.event
@@ -224,9 +249,9 @@ async def gm_post(interaction: discord.Interaction, channel: discord.TextChannel
 
 
 @tree.command(name="gm-embed", description="Post an embed message in a channel.")
-@app_commands.describe(channel="Channel to post in")
-async def gm_embed(interaction: discord.Interaction, channel: discord.TextChannel):
-    await interaction.response.send_modal(EmbedModal(channel))
+@app_commands.describe(channel="Channel to post in", role="Role to tag alongside the embed (optional)")
+async def gm_embed(interaction: discord.Interaction, channel: discord.TextChannel, role: discord.Role = None):
+    await interaction.response.send_modal(EmbedModal(channel, role))
 
 
 @tree.command(name="gm-edit", description="Edit a message the bot previously posted.")
