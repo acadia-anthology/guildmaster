@@ -162,12 +162,13 @@ class EditModal(discord.ui.Modal, title="Edit Message"):
         self._message = message
         self._is_embed = is_embed
         current_text = message.embeds[0].description if is_embed else message.content
+        max_len = 4000 if is_embed else 2000
         self.content = discord.ui.TextInput(
             label="Message",
             style=discord.TextStyle.paragraph,
-            default=current_text or "",
+            default=(current_text or "")[:max_len],
             required=True,
-            max_length=4000 if is_embed else 2000,
+            max_length=max_len,
         )
         self.add_item(self.content)
 
