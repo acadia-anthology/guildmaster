@@ -382,6 +382,53 @@ async def gm_help(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
+@tree.command(name="gm-emojis", description="List all emojis registered to the bot's application.")
+async def gm_emojis(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    global EMOJI_MAP
+    try:
+        app_emojis = await client.fetch_application_emojis()
+        EMOJI_MAP = {emoji.name: emoji for emoji in app_emojis}
+    except discord.HTTPException as exc:
+        await interaction.followup.send(f"❌ Failed to fetch emojis: {exc}", ephemeral=True)
+        return
+
+    if not app_emojis:
+        await interaction.followup.send("No emojis registered yet.", ephemeral=True)
+        return
+
+    lines = [f"{emoji} `{emoji.name}`" for emoji in sorted(app_emojis, key=lambda e: e.name)]
+    embed = discord.Embed(title=f"Registered Emojis ({len(lines)})", color=GUILD_COLOR)
+    chunk = ""
+    chunk_index = 1
+    for line in lines:
+        if len(chunk) + len(line) + 1 > 1024:
+            embed.add_field(name=f"Emojis {chunk_index}", value=chunk, inline=False)
+            chunk = ""
+            chunk_index += 1
+        chunk += line + "\n"
+    if chunk:
+        embed.add_field(name=f"Emojis {chunk_index}", value=chunk, inline=False)
+
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+@tree.command(name="gm-emoji-upload", description="Upload a new emoji to the bot's application.")
+@app_commands.describe(name="Emoji name (2-32 characters)", image="Image file (PNG, JPG, or GIF)")
+async def gm_emoji_upload(interaction: discord.Interaction, name: str, image: discord.Attachment):
+    await interaction.response.defer(ephemeral=True)
+    image_bytes = await image.read()
+    try:
+        emoji = await client.create_application_emoji(name=name, image=image_bytes)
+    except discord.HTTPException as exc:
+        await interaction.followup.send(f"❌ Failed to upload emoji: {exc}", ephemeral=True)
+        return
+
+    EMOJI_MAP[emoji.name] = emoji
+    await interaction.followup.send(f"✅ Uploaded {emoji} as `:{emoji.name}:`.", ephemeral=True)
+
+
 @tree.command(name="gm-forum", description="Post a new thread in a forum channel.")
 @app_commands.describe(
     channel="Forum channel to post in",
