@@ -2,6 +2,7 @@ import os
 import json
 import re
 import traceback
+from typing import Literal, Union
 import discord
 from discord import app_commands
 
@@ -137,7 +138,7 @@ class PostModal(discord.ui.Modal, title="Post a Message"):
         max_length=2000,
     )
 
-    def __init__(self, channel: discord.TextChannel):
+    def __init__(self, channel: Union[discord.TextChannel, discord.Thread]):
         super().__init__()
         self._channel = channel
 
@@ -161,7 +162,7 @@ class EmbedModal(discord.ui.Modal, title="Post an Embed"):
         max_length=6,
     )
 
-    def __init__(self, channel: discord.TextChannel, role: discord.Role = None):
+    def __init__(self, channel: Union[discord.TextChannel, discord.Thread], role: discord.Role = None):
         super().__init__()
         self._channel = channel
         self._role = role
@@ -191,21 +192,32 @@ class ForumPostModal(discord.ui.Modal, title="Post a Forum Thread"):
         max_length=4000,
     )
 
-    def __init__(self, channel: discord.ForumChannel, image: discord.Attachment = None):
+    def __init__(
+        self,
+        channel: discord.ForumChannel,
+        image: discord.Attachment = None,
+        post_type: Literal["embed", "text"] = "embed",
+    ):
         super().__init__()
         self._channel = channel
         self._image = image
+        self._post_type = post_type
 
     async def on_submit(self, interaction: discord.Interaction):
-        embed = discord.Embed(description=resolve_emojis(str(self.content)), color=GUILD_COLOR)
-        file = None
-        if self._image:
-            file = await self._image.to_file()
-            embed.set_image(url=f"attachment://{file.filename}")
+        text = resolve_emojis(str(self.content))
+        file = await self._image.to_file() if self._image else None
 
-        kwargs = {"name": str(self.thread_title), "embed": embed}
+        kwargs = {"name": str(self.thread_title)}
+        if self._post_type == "embed":
+            embed = discord.Embed(description=text, color=GUILD_COLOR)
+            if file:
+                embed.set_image(url=f"attachment://{file.filename}")
+            kwargs["embed"] = embed
+        else:
+            kwargs["content"] = text
         if file:
             kwargs["file"] = file
+
         await self._channel.create_thread(**kwargs)
         await interaction.response.send_message(f"✅ Thread posted in {self._channel.mention}.", ephemeral=True)
 
@@ -315,27 +327,52 @@ async def gm_setwelcome_error(interaction: discord.Interaction, error: app_comma
         raise error
 
 
-@tree.command(name="gm-post", description="Post a plain text message in a channel.")
-@app_commands.describe(channel="Channel to post in")
-async def gm_post(interaction: discord.Interaction, channel: discord.TextChannel):
+@tree.command(name="gm-post", description="Post a plain text message in a channel or thread.")
+@app_commands.describe(channel="Channel or thread to post in")
+async def gm_post(interaction: discord.Interaction, channel: Union[discord.TextChannel, discord.Thread]):
     await interaction.response.send_modal(PostModal(channel))
 
 
-@tree.command(name="gm-embed", description="Post an embed message in a channel.")
-@app_commands.describe(channel="Channel to post in", role="Role to tag alongside the embed (optional)")
-async def gm_embed(interaction: discord.Interaction, channel: discord.TextChannel, role: discord.Role = None):
+@tree.command(name="gm-embed", description="Post an embed message in a channel or thread.")
+@app_commands.describe(channel="Channel or thread to post in", role="Role to tag alongside the embed (optional)")
+async def gm_embed(
+    interaction: discord.Interaction,
+    channel: Union[discord.TextChannel, discord.Thread],
+    role: discord.Role = None,
+):
     await interaction.response.send_modal(EmbedModal(channel, role))
 
 
+@tree.command(name="gm-help", description="List all Guild Master commands.")
+async def gm_help(interaction: discord.Interaction):
+    embed = discord.Embed(title="Guild Master Commands", color=GUILD_COLOR)
+    for command in sorted(tree.get_commands(), key=lambda c: c.name):
+        embed.add_field(name=f"/{command.name}", value=command.description or "No description", inline=False)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
 @tree.command(name="gm-forum", description="Post a new thread in a forum channel.")
-@app_commands.describe(channel="Forum channel to post in", image="Image to attach to the thread (optional)")
-async def gm_forum(interaction: discord.Interaction, channel: discord.ForumChannel, image: discord.Attachment = None):
-    await interaction.response.send_modal(ForumPostModal(channel, image))
+@app_commands.describe(
+    channel="Forum channel to post in",
+    image="Image to attach to the thread (optional)",
+    post_type="Post as an embed or plain text",
+)
+async def gm_forum(
+    interaction: discord.Interaction,
+    channel: discord.ForumChannel,
+    image: discord.Attachment = None,
+    post_type: Literal["embed", "text"] = "embed",
+):
+    await interaction.response.send_modal(ForumPostModal(channel, image, post_type))
 
 
 @tree.command(name="gm-edit", description="Edit a message the bot previously posted.")
-@app_commands.describe(channel="Channel the message is in", message_id="The ID of the message to edit")
-async def gm_edit(interaction: discord.Interaction, channel: discord.TextChannel, message_id: str):
+@app_commands.describe(channel="Channel or thread the message is in", message_id="The ID of the message to edit")
+async def gm_edit(
+    interaction: discord.Interaction,
+    channel: Union[discord.TextChannel, discord.Thread],
+    message_id: str,
+):
     try:
         msg_id = int(message_id)
     except ValueError:
