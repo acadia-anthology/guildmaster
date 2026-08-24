@@ -176,6 +176,40 @@ class EmbedModal(discord.ui.Modal, title="Post an Embed"):
         await interaction.response.send_message(f"✅ Embed posted in {self._channel.mention}.", ephemeral=True)
 
 
+class ForumPostModal(discord.ui.Modal, title="Post a Forum Thread"):
+    thread_title = discord.ui.TextInput(
+        label="Thread Title",
+        placeholder="Title for the new thread",
+        required=True,
+        max_length=100,
+    )
+    content = discord.ui.TextInput(
+        label="Message",
+        style=discord.TextStyle.paragraph,
+        placeholder="Write the thread's opening message here.",
+        required=True,
+        max_length=4000,
+    )
+
+    def __init__(self, channel: discord.ForumChannel, image: discord.Attachment = None):
+        super().__init__()
+        self._channel = channel
+        self._image = image
+
+    async def on_submit(self, interaction: discord.Interaction):
+        embed = discord.Embed(description=resolve_emojis(str(self.content)), color=GUILD_COLOR)
+        file = None
+        if self._image:
+            file = await self._image.to_file()
+            embed.set_image(url=f"attachment://{file.filename}")
+
+        kwargs = {"name": str(self.thread_title), "embed": embed}
+        if file:
+            kwargs["file"] = file
+        await self._channel.create_thread(**kwargs)
+        await interaction.response.send_message(f"✅ Thread posted in {self._channel.mention}.", ephemeral=True)
+
+
 class EditModal(discord.ui.Modal, title="Edit Message"):
     def __init__(self, message: discord.Message, is_embed: bool):
         super().__init__()
@@ -291,6 +325,12 @@ async def gm_post(interaction: discord.Interaction, channel: discord.TextChannel
 @app_commands.describe(channel="Channel to post in", role="Role to tag alongside the embed (optional)")
 async def gm_embed(interaction: discord.Interaction, channel: discord.TextChannel, role: discord.Role = None):
     await interaction.response.send_modal(EmbedModal(channel, role))
+
+
+@tree.command(name="gm-forum", description="Post a new thread in a forum channel.")
+@app_commands.describe(channel="Forum channel to post in", image="Image to attach to the thread (optional)")
+async def gm_forum(interaction: discord.Interaction, channel: discord.ForumChannel, image: discord.Attachment = None):
+    await interaction.response.send_modal(ForumPostModal(channel, image))
 
 
 @tree.command(name="gm-edit", description="Edit a message the bot previously posted.")
