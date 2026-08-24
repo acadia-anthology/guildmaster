@@ -12,6 +12,30 @@ SYNC_GUILD_IDS = [g.strip() for g in os.environ.get("SYNC_GUILD_IDS", "").split(
 COMMANDS_CHANNEL_ID = 1513883581414375605
 
 
+async def resolve_channel_arg(interaction: discord.Interaction, channel_arg: str):
+    """Resolve a channel/thread from a pasted ID or #mention.
+
+    The native channel-picker only shows threads the invoking user has
+    joined, so admins can't target threads they were never added to.
+    Resolving by ID sidesteps that entirely.
+    """
+    raw = channel_arg.strip()
+    if raw.startswith("<#") and raw.endswith(">"):
+        raw = raw[2:-1]
+    try:
+        channel_id = int(raw)
+    except ValueError:
+        return None
+
+    channel = interaction.guild.get_channel_or_thread(channel_id)
+    if channel:
+        return channel
+    try:
+        return await interaction.guild.fetch_channel(channel_id)
+    except (discord.NotFound, discord.Forbidden):
+        return None
+
+
 def load_config() -> dict:
     try:
         with open(CONFIG_PATH, "r") as f:
@@ -328,19 +352,26 @@ async def gm_setwelcome_error(interaction: discord.Interaction, error: app_comma
 
 
 @tree.command(name="gm-post", description="Post a plain text message in a channel or thread.")
-@app_commands.describe(channel="Channel or thread to post in")
-async def gm_post(interaction: discord.Interaction, channel: Union[discord.TextChannel, discord.Thread]):
-    await interaction.response.send_modal(PostModal(channel))
+@app_commands.describe(channel="Channel/thread mention or ID to post in")
+async def gm_post(interaction: discord.Interaction, channel: str):
+    target = await resolve_channel_arg(interaction, channel)
+    if target is None:
+        await interaction.response.send_message("❌ Couldn't find that channel or thread.", ephemeral=True)
+        return
+    await interaction.response.send_modal(PostModal(target))
 
 
 @tree.command(name="gm-embed", description="Post an embed message in a channel or thread.")
-@app_commands.describe(channel="Channel or thread to post in", role="Role to tag alongside the embed (optional)")
-async def gm_embed(
-    interaction: discord.Interaction,
-    channel: Union[discord.TextChannel, discord.Thread],
-    role: discord.Role = None,
-):
-    await interaction.response.send_modal(EmbedModal(channel, role))
+@app_commands.describe(
+    channel="Channel/thread mention or ID to post in",
+    role="Role to tag alongside the embed (optional)",
+)
+async def gm_embed(interaction: discord.Interaction, channel: str, role: discord.Role = None):
+    target = await resolve_channel_arg(interaction, channel)
+    if target is None:
+        await interaction.response.send_message("❌ Couldn't find that channel or thread.", ephemeral=True)
+        return
+    await interaction.response.send_modal(EmbedModal(target, role))
 
 
 @tree.command(name="gm-help", description="List all Guild Master commands.")
@@ -367,16 +398,20 @@ async def gm_forum(
 
 
 @tree.command(name="gm-edit", description="Edit a message the bot previously posted.")
-@app_commands.describe(channel="Channel or thread the message is in", message_id="The ID of the message to edit")
-async def gm_edit(
-    interaction: discord.Interaction,
-    channel: Union[discord.TextChannel, discord.Thread],
-    message_id: str,
-):
+@app_commands.describe(
+    channel="Channel/thread mention or ID the message is in",
+    message_id="The ID of the message to edit",
+)
+async def gm_edit(interaction: discord.Interaction, channel: str, message_id: str):
     try:
         msg_id = int(message_id)
     except ValueError:
         await interaction.response.send_message("❌ That doesn't look like a valid message ID.", ephemeral=True)
+        return
+
+    channel = await resolve_channel_arg(interaction, channel)
+    if channel is None:
+        await interaction.response.send_message("❌ Couldn't find that channel or thread.", ephemeral=True)
         return
 
     try:
