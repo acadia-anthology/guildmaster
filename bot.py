@@ -384,7 +384,7 @@ async def gm_help(interaction: discord.Interaction):
 
 @tree.command(name="gm-emojis", description="List all emojis registered to the bot's application.")
 async def gm_emojis(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer()
 
     global EMOJI_MAP
     try:
@@ -411,7 +411,7 @@ async def gm_emojis(interaction: discord.Interaction):
     if chunk:
         embed.add_field(name=f"Emojis {chunk_index}", value=chunk, inline=False)
 
-    await interaction.followup.send(embed=embed, ephemeral=True)
+    await interaction.followup.send(embed=embed)
 
 
 @tree.command(name="gm-emoji-upload", description="Upload a new emoji to the bot's application.")
