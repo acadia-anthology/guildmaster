@@ -390,28 +390,40 @@ async def gm_emojis(interaction: discord.Interaction):
     try:
         app_emojis = await client.fetch_application_emojis()
         EMOJI_MAP = {emoji.name: emoji for emoji in app_emojis}
-    except discord.HTTPException as exc:
-        await interaction.followup.send(f"❌ Failed to fetch emojis: {exc}", ephemeral=True)
-        return
 
-    if not app_emojis:
-        await interaction.followup.send("No emojis registered yet.", ephemeral=True)
-        return
+        if not app_emojis:
+            await interaction.followup.send("No emojis registered yet.", ephemeral=True)
+            return
 
-    lines = [f"{emoji} `{emoji.name}`" for emoji in sorted(app_emojis, key=lambda e: e.name)]
-    embed = discord.Embed(title=f"Registered Emojis ({len(lines)})", color=GUILD_COLOR)
-    chunk = ""
-    chunk_index = 1
-    for line in lines:
-        if len(chunk) + len(line) + 1 > 1024:
-            embed.add_field(name=f"Emojis {chunk_index}", value=chunk, inline=False)
-            chunk = ""
-            chunk_index += 1
-        chunk += line + "\n"
-    if chunk:
-        embed.add_field(name=f"Emojis {chunk_index}", value=chunk, inline=False)
+        lines = [f"{emoji} `{emoji.name}`" for emoji in sorted(app_emojis, key=lambda e: e.name)]
 
-    await interaction.followup.send(embed=embed)
+        # Chunk into fields (max 1024 chars each), then group a few fields
+        # per embed to stay well under Discord's 6000-char total-embed cap.
+        fields = []
+        chunk = ""
+        for line in lines:
+            if len(chunk) + len(line) + 1 > 1024:
+                fields.append(chunk)
+                chunk = ""
+            chunk += line + "\n"
+        if chunk:
+            fields.append(chunk)
+
+        embeds = []
+        for i in range(0, len(fields), 4):
+            embed = discord.Embed(color=GUILD_COLOR)
+            if i == 0:
+                embed.title = f"Registered Emojis ({len(lines)})"
+            for j, field_value in enumerate(fields[i:i + 4], start=i + 1):
+                embed.add_field(name=f"Emojis {j}", value=field_value, inline=False)
+            embeds.append(embed)
+
+        # Discord allows up to 10 embeds per message.
+        for i in range(0, len(embeds), 10):
+            await interaction.followup.send(embeds=embeds[i:i + 10])
+    except Exception as exc:
+        traceback.print_exc()
+        await interaction.followup.send(f"❌ Failed to list emojis: {exc}", ephemeral=True)
 
 
 @tree.command(name="gm-emoji-upload", description="Upload a new emoji to the bot's application.")
